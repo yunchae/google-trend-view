@@ -54,48 +54,81 @@
         <div>日まで</div>
       </div>
     </div>
-    <button class="click" @click="find" :disabled="disabledButton"> Download Excel </button>
+    <button class="click" @click="searches" :disabled="disabledButton"> Download Excel </button>
+    <loading :active.sync="isLoading"
+             :can-cancel="false"
+             :is-full-page="fullPage"></loading>
   </div>
 </template>
 
 <script>
 
 import VueTagsInput from '@johmun/vue-tags-input';
+// Import component
+import Loading from 'vue-loading-overlay';
+// Import stylesheet
+import 'vue-loading-overlay/dist/vue-loading.css';
 
 export default {
   name: 'GoogleTrend',
   components: {
     VueTagsInput,
+    Loading
   },
   computed: {
     disabledButton: function() {
       if (this.tags.length < 1) return true
-      console.log('1')
       if (this.getInterval < 1) return true
-      console.log('2')
       if (this.search.repeatCount < 1) return true
-      console.log('3')
       if (this.search.usePast && (this.search.before.year == "" &&
                                   this.search.before.month == "" &&
                                   this.search.before.day == "")) return true
-      console.log('4')
       if (!this.search.usePast && (this.search.startDate.year == "" ||
                                    this.search.startDate.month == "" ||
                                    this.search.startDate.day == "" ||
                                    this.search.endDate.year == "" ||
                                    this.search.endDate.month == "" ||
                                    this.search.endDate.day == "")) return true
-      console.log('5')
       return false
     },
     getInterval: function() {
-      return this.search.interval.min * 60 + this.search.interval.sec
+      return (this.search.interval.min * 60 + this.search.interval.sec) * 1000
+    },
+    isDaily: function() {
+      let startDate = ''
+      let endDate = ''
+
+      if (this.search.before.year || this.search.before.month || this.search.before.day) {
+          startDate = this.makePastStartDate()
+          endDate   = this.search.before.endDate
+      } else {
+        startDate = this.makeDate(this.search.startDate)
+        endDate   = this.makeDate(this.search.endDate)
+      }
+
+      return (endDate-startDate)/(24*60*60*1000) < 270
+    },
+    bodyParams: function () {
+      return {
+        keywords: this.tags.map(item => item.text),
+        startdate: [
+          this.search.usePast ? this.search.before.startDate.getFullYear() : this.search.startDate.year,
+          this.search.usePast ? this.search.before.startDate.getMonth() + 1 : this.search.startDate.month,
+          this.search.usePast ? this.search.before.startDate.getDate() : this.search.startDate.day,
+        ].join("."),
+        enddate: [
+          this.search.usePast ? this.search.before.endDate.getFullYear() : this.search.endDate.year,
+          this.search.usePast ? this.search.before.endDate.getMonth() + 1 : this.search.endDate.month,
+          this.search.usePast ? this.search.before.endDate.getDate() : this.search.endDate.day,
+        ].join(".")
+      }
     }
   },
   data: function () {
     return {
       tag: '',
       tags: [],
+      WEEK: 37,
       search: {
         interval: {
           min: 0,
@@ -116,81 +149,206 @@ export default {
         before: {
           year: '',
           month: '',
-          day: ''
+          day: '',
+          startDate: {},
+          endDate: {}
         }
-      }
+      },
+      isLoading: false,
+      fullPage: true
     }
   },
   methods: {
-    find: function() {
-        const body = {
-          keywords: this.tags.map(item => item.text),
-          startdate: [
-                      this.search.startDate.year,
-                      this.search.startDate.month,
-                      this.search.startDate.day,
-                     ].join("."),
-          enddate: [
-                      !this.search.usePast ? "" : this.search.endDate.year,
-                      !this.search.usePast ? "" : this.search.endDate.month,
-                      !this.search.usePast ? "" : this.search.endDate.day,
-                   ].join("."),
-          beforeYear: this.search.before.year,
-          beforeMonth: this.search.before.month,
-          beforeDay: this.search.before.day,
-          interval: this.getInterval,
-          repeatCount: this.search.repeatCount
+    sleep: function() {
+      return new Promise(resolve => setTimeout(resolve, this.getInterval))
+    },
+    makeTodayDate: function() {
+      const date = this.$moment().toDate()
+      date.setHours(23,0,0)
+      return date
+    },
+    makePastStartDate: function() {
+      const startDate = this.makeTodayDate()
+
+      if (this.search.before.year > 0 ) startDate.setFullYear(startDate.getFullYear() - this.search.before.year)
+      if (this.search.before.month > 0 ) startDate.setMonth(startDate.getMonth() - this.search.before.month)
+      if (this.search.before.day > 0 ) startDate.setDate(startDate.getDate() - this.search.before.day)
+
+      this.search.before.startDate = startDate
+    },
+    makeDate: function (date) {
+      const moment = this.$moment().toDate()
+      moment.setFullYear(date.year || date[0])
+      moment.setMonth(parseInt(date.month || date[1]) - 1)
+      moment.setDate(date.day || date[2])
+      moment.setHours(23,0,0)
+      return moment
+    },
+    searches: async function() {
+        this.isLoading = true
+        if (this.isDaily) {
+           const daily = await this.dailySearch(this.bodyParams)
+           this.downloadDaily(daily)
+        } else {
+          const searchResult = await this.$axios.post('https://boiling-crag-00492.herokuapp.com//weekly-search', this.bodyParams)
+          const weeklyData = searchResult.data
+          const DAILY_SEARCH_COUNT = Math.floor(weeklyData.length / this.WEEK)
+
+          let afterResult = []
+          const rawResult = []
+          for(let i = 0; i < DAILY_SEARCH_COUNT; i++) {
+            let week37data = weeklyData.splice(0, this.WEEK)
+            let day37data = await this.convertWeeklyToDaily(week37data,
+                    weeklyData.length % this.WEEK == 0 && i == DAILY_SEARCH_COUNT - 1 ? this.bodyParams.endDate : '',
+                    i == 0 ? this.bodyParams.startDate: '');
+            afterResult = afterResult.concat(day37data)
+            rawResult.push({ week37data: week37data, day37data})
+          }
+
+          if (weeklyData.length % this.WEEK > 0) {
+            let day37data = await this.convertWeeklyToDaily(weeklyData, this.bodyParams.endDate);
+            afterResult = afterResult.concat(day37data)
+            rawResult.push({ week37data: weeklyData, day37data})
+          }
+          this.downloadWeeky(afterResult, rawResult)
         }
+    },
+    dailySearch: async function(params) {
+      const resultList = []
+      let rawList = []
+      for (let i = 0; i < this.search.repeatCount; i++) {
+        const searchResult = await this.$axios.post('https://boiling-crag-00492.herokuapp.com//daily-search', params)
+        resultList.push(searchResult.data)
+        rawList.push(searchResult.data)
+        await this.sleep()
+      }
+      const resultLength = resultList[0].length
+      if (resultLength > 0) {
+        for (let i = 0; i < resultLength; i++) {
+          for (let j = 1; j < this.search.repeatCount; j++) {
+            resultList[0][i].formattedValue += resultList[j][i].formattedValue
+          }
+          resultList[0][i].formattedValue /= this.search.repeatCount
+        }
+      }
 
-        console.log('body :: ', body)
+      if (this.isDaily) {
+        return {resultList: resultList[0], rawList}
+      } else {
+        return resultList[0]
+      }
+    },
+    convertWeeklyToDaily: async function (week37data, endDate, startDate) {
+      let max = 0
+      let date = ''
 
-        this.$axios.post('https://boiling-crag-00492.herokuapp.com/google-trend',
-        // this.$axios.post('https://localhost:3000/google-trend',
-                body)
-                .then(({data}) => {
-                  console.log('data:: ', data)
-                  if (data.type == "daily") {
-                    this.downloadDaily(data.result, body)
-                  } else {
-                    this.downloadWeeky(data, body)
-                  }
+      week37data.forEach(item => {
+        if (item.formattedValue > max) {
+          max = item.formattedValue
+          date = item.formattedAxisTime
+        }
+      })
 
-                }).catch(err => {
-                  console.log('err', err)
+      const startAxisTime = week37data[0].formattedAxisTime.split('/').join('.')
+
+      let endAxisTime = this.makeDate(week37data[week37data.length - 1].formattedAxisTime.split('/'))
+      endAxisTime.setDate(endAxisTime.getDate() + 6)
+      endAxisTime = [endAxisTime.getFullYear(), endAxisTime.getMonth() + 1, endAxisTime.getDate()].join('.')
+
+      const params = {
+        keywords: this.tags.map(item => item.text),
+        startdate: startDate || startAxisTime,
+        enddate: endDate || endAxisTime
+      }
+
+      let day37data = await this.dailySearch(params)
+      let valueFound = 0
+
+      day37data.some(item => {
+        if (date == item.formattedTime) {
+          valueFound = item.formattedValue
+          return true
+        }
+        return false
+      })
+
+      return day37data.map(item => {
+        item.formattedValue *= max / valueFound
+        return item
+      })
+    },
+    downloadDaily: function(excelData) {
+      const excel = excelData.resultList.map( item => {
+        return {
+          "期間": item.formattedTime,
+          "スコア": item.formattedValue
+        }
+      })
+
+      const wb = this.$xlsx.utils.book_new()
+      const ws = this.$xlsx.utils.json_to_sheet(excel)
+      this.$xlsx.utils.book_append_sheet(wb, ws, this.bodyParams.keywords)
+
+      for (let i = 0; i < excelData.rawList.length; i ++) {
+          const rawData = excelData.rawList[i].map( item => {
+            return {
+              "期間": item.formattedTime,
+              "スコア": item.formattedValue
+            }
+          })
+
+          const ws = this.$xlsx.utils.json_to_sheet(rawData)
+          this.$xlsx.utils.book_append_sheet(wb, ws, i + 1 + '')
+      }
+
+      this.$xlsx.writeFile(wb,
+              `GT(${this.bodyParams.keywords.join(',')})_${this.bodyParams.startdate}~${this.bodyParams.enddate}_interval(${this.getInterval/1000})_repeat(${this.search.repeatCount}).xlsx`)
+      this.isLoading = false
+    },
+    downloadWeeky: function(excelData, rawData) {
+      const excel = excelData.map( item => {
+        return {
+          "期間": item.formattedTime,
+          "スコア": item.formattedValue
+        }
+      })
+      const ws = this.$xlsx.utils.json_to_sheet(excel)
+      const wb = this.$xlsx.utils.book_new()
+      this.$xlsx.utils.book_append_sheet(wb, ws, this.bodyParams.keywords)
+
+      for (let i = 0; i < rawData.length; i ++) {
+        const week37 = rawData[i].week37data.map( item => {
+          return {
+            "期間": item.formattedTime,
+            "スコア": item.formattedValue
+          }
         })
-    },
-    downloadDaily: function(excelData, {keywords, startdate, enddate, interval, repeatCount}) {
-      const excel = excelData.map( item => {
-        return {
-          "期間": item.formattedTime,
-          "スコア": item.formattedValue
-        }
-      })
-      const ws = this.$xlsx.utils.json_to_sheet(excel)
-      const wb = this.$xlsx.utils.book_new()
-      this.$xlsx.utils.book_append_sheet(wb, ws, keywords)
+
+        const ws1 = this.$xlsx.utils.json_to_sheet(week37)
+        this.$xlsx.utils.book_append_sheet(wb, ws1, i + 1 + 'week37')
+
+        const day37 = rawData[i].day37data.map( item => {
+          return {
+            "期間": item.formattedTime,
+            "スコア": item.formattedValue
+          }
+        })
+
+        const ws2 = this.$xlsx.utils.json_to_sheet(day37)
+        this.$xlsx.utils.book_append_sheet(wb, ws2, i + 1 + 'day37')
+      }
+
       this.$xlsx.writeFile(wb,
-              `GT(${keywords})_${startdate}~${enddate}_interval(${interval})_${repeatCount}repeat.xlsx`)
-    },
-    downloadWeeky: function(excelData, {keywords, startdate, enddate, interval, repeatCount}) {
-      const excel = excelData.map( item => {
-        return {
-          "期間": item.formattedTime,
-          "スコア": item.formattedValue
-        }
-      })
-      const ws = this.$xlsx.utils.json_to_sheet(excel)
-      const wb = this.$xlsx.utils.book_new()
-      this.$xlsx.utils.book_append_sheet(wb, ws, keywords)
-      this.$xlsx.writeFile(wb,
-              `GT(${keywords})_${startdate}~${enddate}_interval(${interval})_${repeatCount}repeat.xlsx`)
+              `GT(${this.bodyParams.keywords.join(',')})_${this.bodyParams.startdate}~${this.bodyParams.enddate}_interval(${this.getInterval/1000})_repeat(${this.search.repeatCount}).xlsx`)
+
+      this.isLoading = false
     },
   },
   mounted: function () {
-    const today = new Date()
-    this.search.endDate.year = today.getFullYear()
-    this.search.endDate.month = today.getMonth() + 1
-    this.search.endDate.day = today.getDate()
+    this.search.before.endDate = this.makeTodayDate()
+    this.search.endDate.year = this.search.before.endDate.getFullYear()
+    this.search.endDate.month = this.search.before.endDate.getMonth() + 1
+    this.search.endDate.day = this.search.before.endDate.getDate()
   }
 }
 </script>
