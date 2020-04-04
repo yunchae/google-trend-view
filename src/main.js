@@ -8,7 +8,7 @@ import 'vue-loading-overlay/dist/vue-loading.css';
 import Moment from 'moment-timezone'
 Moment.tz.setDefault("Asia/Tokyo")
 
-Vue.config.productionTip = false
+Vue.config.productionTip = true
 Vue.prototype.$axios = Axios
 Vue.prototype.$xlsx = Xlsx
 Vue.prototype.$moment = Moment
