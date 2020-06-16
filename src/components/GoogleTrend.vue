@@ -80,15 +80,15 @@ export default {
       if (this.tags.length < 1) return true
       if (this.getInterval < 1) return true
       if (this.search.repeatCount < 1) return true
-      if (this.search.usePast && (this.search.before.year == "" &&
-                                  this.search.before.month == "" &&
-                                  this.search.before.day == "")) return true
-      if (!this.search.usePast && (this.search.startDate.year == "" ||
-                                   this.search.startDate.month == "" ||
-                                   this.search.startDate.day == "" ||
-                                   this.search.endDate.year == "" ||
-                                   this.search.endDate.month == "" ||
-                                   this.search.endDate.day == "")) return true
+      if (this.search.usePast && (this.search.before.year === "" &&
+                                  this.search.before.month === "" &&
+                                  this.search.before.day === "")) return true
+      if (!this.search.usePast && (this.search.startDate.year === "" ||
+                                   this.search.startDate.month === "" ||
+                                   this.search.startDate.day === "" ||
+                                   this.search.endDate.year === "" ||
+                                   this.search.endDate.month === "" ||
+                                   this.search.endDate.day === "")) return true
       return false
     },
     getInterval: function() {
@@ -201,8 +201,8 @@ export default {
           for(let i = 0; i < DAILY_SEARCH_COUNT; i++) {
             let week37data = weeklyData.splice(0, this.WEEK)
             let day37data = await this.convertWeeklyToDaily(week37data,
-                    weeklyData.length % this.WEEK == 0 && i == DAILY_SEARCH_COUNT - 1 ? this.bodyParams.endDate : '',
-                    i == 0 ? this.bodyParams.startDate: '');
+                    weeklyData.length % this.WEEK === 0 && i === DAILY_SEARCH_COUNT - 1 ? this.bodyParams.endDate : '',
+                    i === 0 ? this.bodyParams.startDate: '');
             afterResult = afterResult.concat(day37data)
             rawResult.push({ week37data: week37data, day37data})
           }
@@ -268,7 +268,7 @@ export default {
       let valueFound = 0
 
       day37data.some(item => {
-        if (date == item.formattedTime) {
+        if (date === item.formattedTime) {
           valueFound = item.formattedValue
           return true
         }
