@@ -175,6 +175,7 @@ export default {
       if (this.search.before.day > 0 ) startDate.setDate(startDate.getDate() - this.search.before.day)
 
       this.search.before.startDate = startDate
+      return startDate
     },
     makeDate: function (date) {
       const moment = this.$moment().toDate()
@@ -190,7 +191,8 @@ export default {
            const daily = await this.dailySearch(this.bodyParams)
            this.downloadDaily(daily)
         } else {
-          const searchResult = await this.$axios.post('https://boiling-crag-00492.herokuapp.com//weekly-search', this.bodyParams)
+          const searchResult = await this.$axios.post('https://boiling-crag-00492.herokuapp.com/weekly-search', this.bodyParams)
+          // const searchResult = await this.$axios.post('http://localhost:3000/weekly-search', this.bodyParams)
           const weeklyData = searchResult.data
           const DAILY_SEARCH_COUNT = Math.floor(weeklyData.length / this.WEEK)
 
@@ -217,7 +219,8 @@ export default {
       const resultList = []
       let rawList = []
       for (let i = 0; i < this.search.repeatCount; i++) {
-        const searchResult = await this.$axios.post('https://boiling-crag-00492.herokuapp.com//daily-search', params)
+        const searchResult = await this.$axios.post('https://boiling-crag-00492.herokuapp.com/daily-search', params)
+        // const searchResult = await this.$axios.post('http://localhost:3000/daily-search', params)
         resultList.push(searchResult.data)
         rawList.push(searchResult.data)
         await this.sleep()
@@ -426,4 +429,10 @@ li {
 a {
   color: #42b983;
 }
+
+::placeholder { /* Chrome, Firefox, Opera, Safari 10.1+ */
+  color: lightgrey;
+  opacity: 1; /* Firefox */
+}
+
 </style>
